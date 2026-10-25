@@ -1,4 +1,4 @@
-package com.example.digitalspiritlevel
+package com.example.digitalspiritlevel.helpers
 
 import kotlinx.coroutines.delay
 

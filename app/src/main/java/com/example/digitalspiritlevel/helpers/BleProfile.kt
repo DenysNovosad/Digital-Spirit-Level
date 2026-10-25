@@ -1,4 +1,4 @@
-package com.example.digitalspiritlevel
+package com.example.digitalspiritlevel.helpers
 
 object BleProfile {
     const val SERVICE_UUID = "4f1a0000-6b7c-4d8e-9f10-112233445566"
