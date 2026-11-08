@@ -1,7 +1,11 @@
 package com.example.digitalspiritlevel.level
 
+import android.Manifest
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -30,6 +35,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -47,12 +55,27 @@ import com.example.digitalspiritlevel.helpers.BleConnectionState
 fun LevelScreen(viewModel: LevelViewModel) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    var pendingFlashlightState by remember { mutableStateOf(false) }
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        viewModel.onAction(
+            LevelAction.CameraPermissionResult(
+                granted = granted,
+                enableAfterGrant = pendingFlashlightState
+            )
+        )
+    }
 
     LaunchedEffect(viewModel) {
         viewModel.events.collect { event ->
             when (event) {
                 is LevelEvent.ShowMessage -> {
                     Toast.makeText(context, event.text, Toast.LENGTH_SHORT).show()
+                }
+                is LevelEvent.RequestCameraPermission -> {
+                    pendingFlashlightState = event.enableAfterGrant
+                    cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
                 }
             }
         }
@@ -174,10 +197,189 @@ fun LevelContent(
 
         Spacer(modifier = Modifier.height(20.dp))
 
+        ManualControlPanel(
+            state = state,
+            onAction = onAction
+        )
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        RemoteControlPanel(state = state)
+
+        Spacer(modifier = Modifier.height(20.dp))
+
         BleControlPanel(
             state = state,
             onAction = onAction
         )
+    }
+}
+
+@Composable
+private fun ManualControlPanel(
+    state: LevelState,
+    onAction: (LevelAction) -> Unit
+) {
+    val alarmColor = if (state.isAlarmActive) {
+        Color(0xFFE53935)
+    } else {
+        Color(0xFF2EAD63)
+    }
+    val flashlightColor = if (state.isFlashlightOn) {
+        Color(0xFFFFC107)
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(
+                text = "Ручне керування (Manual Control)",
+                fontSize = 19.sp,
+                fontWeight = FontWeight.Bold
+            )
+
+            Text(
+                text = if (state.automaticControlEnabled) {
+                    "Автоматичний режим: нахил понад 5° активує тривогу"
+                } else {
+                    "Ручний режим: стан задає користувач"
+                },
+                color = if (state.automaticControlEnabled) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                }
+            )
+
+            Text(
+                text = if (state.isAlarmActive) {
+                    "Тривога: АКТИВНА"
+                } else {
+                    "Тривога: вимкнена"
+                },
+                color = alarmColor,
+                fontWeight = FontWeight.SemiBold
+            )
+
+            OutlinedButton(
+                onClick = {
+                    onAction(LevelAction.ToggleAutomaticControl)
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    if (state.automaticControlEnabled) {
+                        "Перейти в ручний режим"
+                    } else {
+                        "Увімкнути автоматичний режим"
+                    }
+                )
+            }
+
+            Button(
+                onClick = { onAction(LevelAction.ToggleManualAlarm) },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    if (state.isAlarmActive) {
+                        "Вимкнути тривогу"
+                    } else {
+                        "Увімкнути тривогу"
+                    }
+                )
+            }
+
+            Button(
+                onClick = { onAction(LevelAction.TriggerVibration) },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Перевірити вібровідгук")
+            }
+
+            OutlinedButton(
+                onClick = {
+                    onAction(
+                        LevelAction.SetFlashlight(!state.isFlashlightOn)
+                    )
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    if (state.isFlashlightOn) {
+                        "Вимкнути ліхтарик"
+                    } else {
+                        "Увімкнути ліхтарик"
+                    },
+                    color = flashlightColor
+                )
+            }
+
+            Text(
+                text = buildString {
+                    append("Вібратор: ")
+                    append(if (state.hasVibrator) "доступний" else "недоступний")
+                    append("; апаратний спалах: ")
+                    append(if (state.hasFlashlight) "доступний" else "недоступний")
+                },
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun RemoteControlPanel(state: LevelState) {
+    val lampColor = if (state.isRemoteLampOn) {
+        Color(0xFFFFC107)
+    } else {
+        Color(0xFF616161)
+    }
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(
+                text = "Cloud-to-Device",
+                fontSize = 19.sp,
+                fontWeight = FontWeight.Bold
+            )
+
+            Box(
+                modifier = Modifier
+                    .size(64.dp)
+                    .background(lampColor, CircleShape)
+            )
+
+            Text(
+                text = if (state.isRemoteLampOn) {
+                    "Віртуальна лампа: ON"
+                } else {
+                    "Віртуальна лампа: OFF"
+                },
+                color = lampColor,
+                fontWeight = FontWeight.SemiBold
+            )
+
+            Text(state.remoteControlStatus.label)
+            Text(
+                text = state.lastRemoteCommand,
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = "Retrofit опитує тестові команди JSONPlaceholder кожні 5 секунд",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }
 
